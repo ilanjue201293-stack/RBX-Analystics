@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 const GAMES = 'https://games.roblox.com'
+const SEARCH = 'https://apis.roblox.com/search-api'
 const USERS = 'https://users.roblox.com'
 const THUMBS = 'https://thumbnails.roblox.com'
 const ANALYTICS = 'https://apis.roblox.com/analytics-query-api/v1'
@@ -21,9 +22,31 @@ async function resolve(q: string) {
     if (!d?.universeId) return null
     return (await get(`${GAMES}/v1/games?universeIds=${d.universeId}`)).data?.[0]
   }
+
   if (/^\d+$/.test(q)) return (await get(`${GAMES}/v1/games?universeIds=${q}`)).data?.[0]
-  const s = await get(`${GAMES}/v1/games/list?keyword=${encodeURIComponent(q)}&maxRows=20`)
-  return s.games?.[0] || s.data?.[0]
+
+  // /v1/games/list was deprecated by Roblox. Use the current search API instead.
+  const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const search = await get(`${SEARCH}/omni-search?searchQuery=${encodeURIComponent(q)}&pageToken=&sessionId=${encodeURIComponent(sessionId)}&pageType=all`)
+  const contents = (search.searchResults || [])
+    .flatMap((group: any) => Array.isArray(group.contents) ? group.contents : [])
+    .filter((game: any) => game && (game.universeId || game.rootPlaceId))
+
+  const first = contents[0]
+  if (!first) return null
+
+  if (first.universeId) {
+    return (await get(`${GAMES}/v1/games?universeIds=${first.universeId}`)).data?.[0] || first
+  }
+
+  if (first.rootPlaceId) {
+    const p = await get(`${GAMES}/v1/games/multiget-place-details?placeIds=${first.rootPlaceId}`)
+    const d = p.data?.[0] || p[0]
+    if (!d?.universeId) return null
+    return (await get(`${GAMES}/v1/games?universeIds=${d.universeId}`)).data?.[0]
+  }
+
+  return null
 }
 
 function metricResult(body: any) { return body?.response?.values?.[0]?.dataPoints || body?.values?.[0]?.dataPoints || [] }
@@ -54,7 +77,7 @@ export async function GET(req: NextRequest) {
     const [votes, favs, media, creator, place, thumb, privateAnalytics] = await Promise.all([
       get(`${GAMES}/v1/games/votes?universeIds=${uid}`).catch(() => ({})),
       get(`${GAMES}/v1/games/${uid}/favorites/count`).catch(() => ({})),
-      get(`${GAMES}/v2/games/${uid}/media`).catch(() => ({})),
+      get(`${GAMES}/v1/games/${uid}/media`).catch(() => ({})),
       creatorId ? get(`${USERS}/v1/users/${creatorId}`).catch(() => null) : Promise.resolve(null),
       get(`${GAMES}/v1/games/multiget-place-details?placeIds=${universe.rootPlaceId}`).catch(() => null),
       get(`${THUMBS}/v1/games/icons?universeIds=${uid}&returnPolicy=PlaceHolder&size=512x512&format=Png&isCircular=false`).catch(() => null),
