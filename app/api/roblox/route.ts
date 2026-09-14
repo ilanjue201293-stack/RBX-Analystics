@@ -11,7 +11,7 @@ async function get(url: string, init?: RequestInit) {
   return r.json()
 }
 
-function placeFromUrl(input: string) { return input.match(/roblox\\.com\\/games\\/(\\d+)/i)?.[1] || null }
+function placeFromUrl(input: string) { return input.match(/roblox\.com\/games\/(\d+)/i)?.[1] || null }
 
 async function resolve(q: string) {
   const placeId = placeFromUrl(q)
@@ -21,7 +21,7 @@ async function resolve(q: string) {
     if (!d?.universeId) return null
     return (await get(`${GAMES}/v1/games?universeIds=${d.universeId}`)).data?.[0]
   }
-  if (/^\\d+$/.test(q)) return (await get(`${GAMES}/v1/games?universeIds=${q}`)).data?.[0]
+  if (/^\d+$/.test(q)) return (await get(`${GAMES}/v1/games?universeIds=${q}`)).data?.[0]
   const s = await get(`${GAMES}/v1/games/list?keyword=${encodeURIComponent(q)}&maxRows=20`)
   return s.games?.[0] || s.data?.[0]
 }
